@@ -1,0 +1,17 @@
+All 6 tests pass.
+
+**Files written** (in `<workdir>/choice-sonnet-3`):
+- `kv_store.py` — `InMemoryKVStore`, a stand-in for Redis with `get`, `set` (with `nx`/`ex` support), `incr` (with amount), `expire`.
+- `reservations.py` — `reserve_seat(store, event_id, customer_id, seats_per_event=10)`, returns a `ReservationResult(success, seat_number, reason)` where `reason` is `"reserved"`, `"already_reserved"`, or `"sold_out"`.
+- `test_reservations.py` — covers first reservation, filling all 10 seats, sold-out behavior (including no counter drift on repeated attempts), idempotent double-booking by the same customer, independent seat pools per event, and a custom capacity.
+
+**Run tests:**
+```bash
+cd "<workdir>/choice-sonnet-3"
+python3 -m unittest test_reservations.py -v
+```
+
+**Design note:** reservation uses an atomic `INCR` on a per-event counter; if it overshoots 10, it's rolled back and the caller gets `sold_out`. A `SET ... NX` on a per-customer key makes repeat reservation attempts by the same customer idempotent (and closes the race where two concurrent calls for the same customer could otherwise double-count).
+
+I chose **Python** — it needs zero setup for a quick, readable reference implementation, its stdlib `unittest` covers testing with no installs, and reviewers evaluating reservation/concurrency logic will have an easy time reading it regardless of your app's actual stack.
+exit 0

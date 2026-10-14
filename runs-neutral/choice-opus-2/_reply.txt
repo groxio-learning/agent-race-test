@@ -1,0 +1,27 @@
+All 21 tests pass, and the source compiles warning-free.
+
+## Files
+
+- **`reservations.ex`** — three modules:
+  - `Reservations.Store` — the four-callback behaviour (`get`/`set`/`incr`/`expire`), so a real Redis client can drop in. A store is passed around as a `{module, handle}` pair.
+  - `Reservations` — `reserve/4` returns `{:ok, seat_number}` or `{:error, :sold_out}`, plus `seats_available/3` and `seat_holder/3`.
+  - `Reservations.MemoryStore` — the local stand-in, a GenServer with lazy TTL expiry.
+- **`reservations_test.exs`** — 21 tests covering the reservation logic and the store itself.
+
+## Running the tests
+
+```
+cd <workdir>/choice-opus-2
+elixir -r reservations.ex reservations_test.exs
+```
+
+## How it avoids overselling
+
+`reserve/4` increments the event's counter and decides from **the number the store handed back** — 1–10 is a seat, 11+ is sold out. There's no read-then-write window, so two callers can't both claim the last seat. The counter drifts past 10 as sold-out attempts arrive, which is harmless: the comparison keeps it sold out rather than wrapping into availability. There's a test driving 200 concurrent reservations at one event that asserts exactly 10 succeed with seat numbers 1–10, and another hammering `incr` with 500 concurrent calls to confirm the stand-in really is atomic.
+
+Two things I decided rather than asked about, both documented in the code: `reserve/4` is **not** idempotent per customer (two calls for Alice get her two seats — the given primitives have no `SETNX`, so a safe single-seat-per-customer guard needs a store primitive you don't have yet), and `seats_available/3` is advisory only, since a seat can go between that call and the next reserve.
+
+## Language choice
+
+I went with **Elixir** — Go wasn't installed on this machine, and Elixir fit the problem well: the oversell bug here is a race, and the BEAM let me both write the atomic stand-in naturally (one GenServer serializing increments) and actually exercise it with hundreds of genuinely concurrent reservations. ExUnit ships with the language, so the tests run with no installs.
+exit 0

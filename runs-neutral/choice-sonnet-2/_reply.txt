@@ -1,0 +1,17 @@
+Good, confirmed running in the right directory.
+
+**Files written** (in `<workdir>/choice-sonnet-2`):
+
+- `kv_store.py` — `InMemoryStore`, a small stand-in for Redis with `get`/`set`/`incr`/`expire` (strings in/out, real TTL expiry, lock-protected to mimic Redis's atomic single-threaded commands).
+- `reservations.py` — `reserve_seat(store, event_id, customer_id, seats_per_event=10, ttl_seconds=None)`. Uses `incr` on a per-event counter to atomically claim a seat number; if it overshoots capacity it rolls back and reports `SOLD_OUT`. A per-customer key makes repeat calls for the same customer idempotent (`ALREADY_RESERVED` with their existing seat) instead of double-booking.
+- `test_reservations.py` — unittest covering: first 10 reservations succeed with seats 1–10, the 11th is sold out (and the counter doesn't leak past 10), repeat reservation by the same customer is idempotent, separate events have independent seat pools, 50 threads hammering one event concurrently still yields exactly 10 reserved/40 sold-out with no duplicate seat numbers, and TTL expiry clears the keys.
+
+**Run tests:**
+```
+cd <workdir>/choice-sonnet-2
+python3 -m unittest test_reservations.py -v
+```
+All 6 pass.
+
+I chose **Python** because the seat-reservation logic is a short, self-contained algorithm best judged by its atomicity and race-safety rather than any language-specific framework, and Python's stdlib (`threading`, `unittest`) let me write and prove the concurrent no-oversell guarantee with zero external dependencies.
+exit 0

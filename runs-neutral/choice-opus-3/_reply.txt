@@ -1,0 +1,13 @@
+All 22 tests pass.
+
+**Files** (in `.../neutral/choice-opus-3/`):
+- `kvstore.py` — `InMemoryStore` stand-in with `get`/`set`/`incr`/`expire`. Lock-guarded so `incr` is a real atomic read-modify-write like Redis's INCR, and TTLs run off an injectable clock so expiry tests don't sleep.
+- `reservations.py` — `reserve_seat(store, event_id, customer_id, capacity=10, ttl_seconds=None)` returns a `Reservation(status, seat_number, seats_remaining)` with `status` of `reserved`, `already_reserved`, or `sold_out`, plus a `got_seat` convenience property and a `seats_remaining()` helper.
+- `test_reservations.py` — 22 tests: the happy path, filling all 10, sold-out, per-event isolation, argument validation, TTL expiry, store semantics, and two threaded tests (100 simultaneous requests sell exactly 10 distinct seat numbers; one customer clicking 25 times takes one seat).
+
+**Run:** `cd` into that directory, then `python3 -m unittest -v test_reservations` (stdlib only, no installs).
+
+Two design notes worth flagging: the seat count is claimed via `incr` rather than read-then-write, which is what keeps two customers from being handed the same last seat — the counter can drift above 10 under a rush, which is harmless since the sold-out test is `ticket > capacity` and reporting clamps it. And I made the function idempotent per customer via a `incr`-returns-1 claim on a customer key, since a retry or double-click booking two seats seemed like the more costly bug to leave open; if you'd rather each call take a fresh seat, that's the one block to drop.
+
+**Language:** Python — the whole thing is a single store-backed function plus tests, and stdlib `unittest` and `threading` cover both the logic and the concurrency case with zero dependencies, which matters given the no-install constraint.
+exit 0

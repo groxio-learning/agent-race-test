@@ -1,0 +1,12 @@
+All 7 tests pass, including a 50-thread concurrency test that confirms exactly 10 seats get allocated with no overbooking.
+
+**Files written** (in `<workdir>/choice-sonnet-1/`):
+- `reservations.py` — `reserve_seat(store, event_id, customer_id, total_seats=10, ttl_seconds=None)` plus `FakeRedis`, a small in-memory stand-in implementing `get`/`set`/`incr`/`expire`.
+- `test_reservations.py` — 7 unit tests covering filling to capacity, sold-out behavior, no-overshoot after sold-out, idempotent re-reservation by the same customer, independent seat pools per event, concurrent race-safety, and TTL-based window reset.
+
+**Run the tests:** `python3 -m unittest test_reservations.py -v`
+
+**How it works:** seat allocation is a single atomic `incr` on a per-event counter — each caller gets a distinct count, and whoever pushes it past 10 rolls their own increment back, so it's race-safe without locking at the caller level. `get`/`set` record each customer's seat so a repeat call returns the same seat instead of double-booking; `expire` is used to model an optional timed reservation window (e.g., a flash sale) that resets the whole event's seats once it lapses.
+
+I chose **Python** because it runs anywhere with just the stdlib (no npm/pip install needed per your constraints), and `unittest` plus `threading` made it easy to both write the logic and prove it's race-safe under concurrent reservations.
+exit 0

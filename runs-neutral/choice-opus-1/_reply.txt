@@ -1,0 +1,39 @@
+Done. 26 tests + 1 doctest, all passing.
+
+## Files
+
+| File | What's in it |
+|---|---|
+| `lib/tickets/reservations.ex` | `reserve_seat/3` — the function asked for; plus `seats_remaining/2`, `seat_holder/3` |
+| `lib/tickets/store.ex` | Behaviour for the four store ops (`get`/`set`/`incr`/`expire`) |
+| `lib/tickets/memory_store.ex` | In-memory stand-in: one GenServer, lazy key expiry, injectable clock |
+| `lib/tickets/reservation.ex` | Result struct (`event_id`, `customer_id`, `seat`) |
+| `test/tickets/reservations_test.exs` | Reservation behaviour, sell-out, concurrency, expiry |
+| `test/tickets/memory_store_test.exs` | Pins the Redis semantics the main code relies on |
+| `mix.exs`, `.formatter.exs`, `test/test_helper.exs` | Project scaffolding, no dependencies |
+
+```
+cd <workdir>/choice-opus-1
+mix test
+```
+
+`reserve_seat/3` returns `{:ok, %Reservation{seat: n}}` or `{:error, :sold_out}`.
+
+## The one design decision that matters
+
+`INCR` on the event counter *is* the claim: it's atomic, it returns a number no one else will get, and that number is the seat. Read-check-write would be two round trips with a gap, letting two callers both think they have the last seat.
+
+I checked that this isn't a theoretical concern. I wrote a throwaway racy version (get, compare, set) against the same store and ran my concurrency test at it: **19 successes for 10 seats, with seat 10 triple-booked.** The `INCR` version returns exactly seats 1–10. So the test has teeth rather than just passing by construction.
+
+Consequence worth knowing: a refused 11th attempt leaves the counter at 11, and I deliberately don't roll it back — decrementing reopens the very race the counter closes. The counter is therefore a count of *attempts*, not seats, once an event sells out. `seats_remaining/2` floors at zero to account for it, and nothing else reads the raw number.
+
+## Assumption I had to make
+
+**Reserving twice for the same customer yields two seats** — there's no per-customer deduplication. Doing it correctly needs a compare-and-set (`SETNX`), which isn't among the four operations you specified, and a `get`-then-`set` imitation would be the same race as above. I left it out rather than ship a racy version, documented it in the moduledoc, and wrote a test that asserts the current behaviour so the limitation is visible rather than lurking. If one-seat-per-customer is a real rule, say so and I'll add `set_nx` to the store behaviour.
+
+I also put a 30-day TTL on event keys via `expire` so abandoned events don't accumulate; the tests drive this with an injected clock instead of sleeping.
+
+## Language
+
+**Elixir.** Go was my first instinct but isn't installed here; Elixir turned out to be the better fit anyway — a single GenServer is a faithful stand-in for Redis's single-threaded command loop, which is exactly the property that makes `incr` atomic, and `Task.async_stream` makes the 50-caller oversell test trivial to write in the standard library with no test framework or dependencies to install.
+exit 0
